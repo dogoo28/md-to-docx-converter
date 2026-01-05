@@ -8,99 +8,89 @@ import base64
 import requests
 from io import BytesIO
 
-# --- 頁面設定 ---
 st.set_page_config(page_title="專業 MD 轉 Word (含圖表)", page_icon="📈", layout="wide")
 
-# --- 函式：處理 Mermaid 並下載為本地圖片 ---
+# --- 強化版 Mermaid 處理函式 ---
 def process_mermaid_to_local_img(md_text, tmpdir):
-    """
-    將 MD 中的 mermaid 區塊抓出來，下載成 PNG 存放在 tmpdir，
-    並將 MD 內容替換為指向該本地路徑的圖片語法。
-    """
+    # 匹配 ```mermaid (不論大小寫) 開頭，直到下一組 ``` 結束
+    # 包含處理可能出現的 \r\n 換行符號
+    pattern = re.compile(r"```mermaid\s+(.*?)```", re.DOTALL | re.IGNORECASE)
+    
     def download_img(match):
         mermaid_code = match.group(1).strip()
+        if not mermaid_code:
+            return ""
+            
         try:
-            # 將 Mermaid 語法編碼
+            # 將內容轉換為 Base64
             code_bytes = mermaid_code.encode('utf-8')
             base64_code = base64.b64encode(code_bytes).decode('utf-8')
+            
+            # 使用 mermaid.ink 服務
             url = f"https://mermaid.ink/png/{base64_code}"
             
-            # 建立本地臨時圖檔
-            img_filename = f"chart_{base64.b16encode(os.urandom(4)).decode()}.png"
+            # 建立本地圖檔
+            img_filename = f"chart_{os.urandom(4).hex()}.png"
             img_path = os.path.join(tmpdir, img_filename)
             
-            # 下載圖片
-            resp = requests.get(url, timeout=15)
+            resp = requests.get(url, timeout=20)
             if resp.status_code == 200:
                 with open(img_path, "wb") as f:
                     f.write(resp.content)
-                # 回傳本地路徑語法，Pandoc 才能讀取並嵌入
-                return f"\n![Flowchart]({img_path})\n"
+                # 重要：在圖片前後加上換行，確保 Pandoc 識別為獨立段落
+                return f"\n\n![Flowchart]({img_path})\n\n"
+            else:
+                st.error(f"Mermaid 服務回傳錯誤代碼: {resp.status_code}")
         except Exception as e:
-            st.warning(f"Mermaid 轉換失敗：{e}")
+            st.warning(f"圖表轉換過程中發生異常: {e}")
         
-        # 若失敗則保留原樣
-        return f"\n```mermaid\n{mermaid_code}\n```\n"
+        return f"\n\n```mermaid\n{mermaid_code}\n```\n\n"
 
-    # 匹配 ```mermaid ... ```
-    return re.sub(r"```mermaid\s+(.*?)\s+```", download_img, md_text, flags=re.DOTALL)
+    return pattern.sub(download_img, md_text)
 
 # --- UI 介面 ---
 st.title("📈 專業級 Markdown 轉 Word 工具")
-st.markdown("本工具支援 **Mermaid 流程圖自動嵌入**、**數學公式**及**自定義 Word 範本**。")
+st.markdown("當前版本：已強化 Mermaid 匹配與圖片嵌入邏輯。")
 
 with st.sidebar:
     st.header("⚙️ 轉換設定")
     add_toc = st.checkbox("自動生成目錄 (TOC)", value=True)
     math_support = st.checkbox("支援數學公式 ($LaTeX$)", value=True)
-    
-    st.divider()
-    
-    st.subheader("🎨 樣式範本")
     ref_file = st.file_uploader("上傳參考 Word (.docx)", type=["docx"])
-    if ref_file:
-        st.success("✅ 樣式已載入")
 
-# --- 檔案上傳 ---
-uploaded_files = st.file_uploader("請上傳 Markdown 檔案 (.md)", type=["md"], accept_multiple_files=True)
+uploaded_files = st.file_uploader("上傳 .md 檔案", type=["md"], accept_multiple_files=True)
 
 if uploaded_files:
-    if st.button("🚀 開始轉換並下載", use_container_width=True):
+    if st.button("🚀 開始轉換", use_container_width=True):
         zip_buffer = BytesIO()
         
         try:
-            with st.spinner('正在處理圖表與轉換格式...'):
+            with st.spinner('正在精準匹配並轉換 Mermaid 圖表...'):
                 with tempfile.TemporaryDirectory() as tmpdir:
-                    
-                    # 處理範本檔案
                     ref_path = None
                     if ref_file:
                         ref_path = os.path.join(tmpdir, "template.docx")
                         with open(ref_path, "wb") as f:
                             f.write(ref_file.getbuffer())
 
-                    # 建立 ZIP
                     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
                         progress_bar = st.progress(0)
                         
                         for i, file in enumerate(uploaded_files):
-                            # 讀取 MD
                             raw_md = file.read().decode("utf-8")
                             
-                            # 1. 重要：預處理 Mermaid 並下載圖片到臨時資料夾
+                            # 預處理：將文字語法轉為本地實體圖片
                             processed_md = process_mermaid_to_local_img(raw_md, tmpdir)
                             
                             output_filename = file.name.replace(".md", ".docx")
                             temp_docx_path = os.path.join(tmpdir, f"out_{i}.docx")
                             
-                            # 2. 設定 Pandoc 參數
-                            # 關鍵：--extract-media=. 確保 Pandoc 處理本地資源
+                            # Pandoc 參數：確保提取媒體資源
                             args = ["--standalone", "--extract-media=."]
                             if add_toc: args.append("--toc")
                             if math_support: args.append("--mathjax")
                             if ref_path: args.append(f"--reference-doc={ref_path}")
                             
-                            # 3. 執行轉換
                             pypandoc.convert_text(
                                 processed_md, 
                                 'docx', 
@@ -109,13 +99,12 @@ if uploaded_files:
                                 outputfile=temp_docx_path
                             )
                             
-                            # 4. 寫入 ZIP
                             with open(temp_docx_path, "rb") as f:
                                 zip_file.writestr(output_filename, f.read())
                             
                             progress_bar.progress((i + 1) / len(uploaded_files))
 
-            st.success("✨ 轉換成功！圖表已嵌入 Word 檔案中。")
+            st.success("✨ 轉換成功！請點擊下方按鈕下載。")
             st.download_button(
                 label="📥 下載轉換後的 ZIP 包",
                 data=zip_buffer.getvalue(),
@@ -125,7 +114,4 @@ if uploaded_files:
             )
             
         except Exception as e:
-            st.error(f"轉換過程中發生錯誤：{str(e)}")
-
-else:
-    st.info("請先上傳 .md 檔案。")
+            st.error(f"轉換失敗：{str(e)}")
