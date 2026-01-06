@@ -199,12 +199,11 @@ with st.sidebar:
     
     st.divider()
     
-    st.header("📝 文件屬性 (Metadata)")
-    meta_title = st.text_input("文件標題", value="")
-    meta_author = st.text_input("作者", value="")
-    meta_date = st.text_input("日期", value="")
-    
-    st.divider()
+    with st.expander("📝 文件屬性 (Metadata)", expanded=False):
+        st.caption("適用於所有轉換模式")
+        meta_title = st.text_input("文件標題", value="")
+        meta_author = st.text_input("作者", value="")
+        meta_date = st.text_input("日期", value="")
     
     st.subheader("🎨 樣式範本")
     template_source = st.radio("選擇範本來源", ["使用內建範本", "上傳自訂範本"])
