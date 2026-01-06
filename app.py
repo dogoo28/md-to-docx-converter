@@ -58,6 +58,55 @@ def process_mermaid_to_local_img(md_text, tmpdir):
 
     return pattern.sub(download_img, md_text)
 
+# --- 核心轉換函式：將 Markdown 轉換為 DOCX ---
+def convert_md_to_docx(md_content: str, output_filename: str, options: dict, tmpdir: str) -> bytes:
+    """
+    核心轉換函式：將 Markdown 內容轉換為 DOCX 格式。
+    
+    Args:
+        md_content: Markdown 文字內容
+        output_filename: 輸出檔名（不含副檔名）
+        options: 轉換選項 dict，包含:
+            - add_toc: bool
+            - math_support: bool  
+            - ref_path: str (範本路徑，可為 None)
+            - meta_title, meta_author, meta_date: str
+        tmpdir: 臨時目錄路徑
+        
+    Returns:
+        bytes: DOCX 檔案的二進位內容
+    """
+    # 處理 Mermaid 流程圖
+    processed_md = process_mermaid_to_local_img(md_content, tmpdir)
+    
+    # 設定 Pandoc 參數
+    args = ["--standalone"]
+    if options.get("add_toc"): 
+        args.append("--toc")
+        args.append("--metadata=toc-title:目錄")
+    if options.get("math_support"): 
+        args.append("--mathjax")
+    if options.get("ref_path"): 
+        args.append(f"--reference-doc={options['ref_path']}")
+    
+    # Metadata 設定
+    if options.get("meta_title"): 
+        args.append(f"--metadata=title:{options['meta_title']}")
+    if options.get("meta_author"): 
+        args.append(f"--metadata=author:{options['meta_author']}")
+    if options.get("meta_date"): 
+        args.append(f"--metadata=date:{options['meta_date']}")
+    
+    # 執行轉換
+    temp_docx_path = os.path.join(tmpdir, f"{output_filename}.docx")
+    pypandoc.convert_text(
+        processed_md, 'docx', format='md', extra_args=args, outputfile=temp_docx_path
+    )
+    
+    # 讀取並返回二進位內容
+    with open(temp_docx_path, "rb") as f:
+        return f.read()
+
 # --- 輔助函式：取得並解析 Word 樣式列表 ---
 def get_docx_style_info(docx_path):
     import docx
@@ -140,7 +189,7 @@ def get_docx_style_info(docx_path):
 
 # --- Streamlit UI 介面 ---
 st.title("📈 專業級 Markdown 轉 Word 工具")
-st.markdown("已優化：**支援中文流程圖**、**自動嵌入圖片**、**自定義 Word 範本**、**合併輸出**。")
+st.markdown("已優化：**支援中文流程圖**、**自動嵌入圖片**、**自定義 Word 範本**、**合併輸出**、**直接貼上文字**。")
 
 with st.sidebar:
     st.header("⚙️ 轉換設定")
@@ -171,8 +220,6 @@ with st.sidebar:
         
         if template_files:
             selected_template = st.selectbox("選擇範本", template_files)
-            default_template_path = os.path.join(templates_dir, selected_template)
-            
             default_template_path = os.path.join(templates_dir, selected_template)
         else:
             st.warning("⚠️ templates 資料夾中找不到 .docx 範本，請先放入檔案。")
@@ -211,133 +258,204 @@ if target_style_source:
             use_container_width=True
         )
 
-# --- 檔案處理區 ---
+# --- 檔案處理區（標籤頁式 UI）---
 st.divider()
-uploaded_files = st.file_uploader("上傳一個或多個 .md 檔案", type=["md"], accept_multiple_files=True)
+tab_upload, tab_paste = st.tabs(["📁 上傳檔案", "📝 貼上文字"])
 
-if uploaded_files:
-    # 建立檔案名稱與物件的對照表
-    file_map = {f.name: f for f in uploaded_files}
-    original_filenames = [f.name for f in uploaded_files]
+# --- 建立共用的轉換選項 ---
+def get_conversion_options(tmpdir):
+    """取得當前的轉換選項設定"""
+    ref_path = None
+    if default_template_path:
+        ref_path = default_template_path
+    elif ref_file:
+        ref_path = os.path.join(tmpdir, "user_style.docx")
+        with open(ref_path, "wb") as f:
+            f.write(ref_file.getbuffer())
     
-    # --- 排序設定 ---
-    files_to_process = uploaded_files # 預設依上傳順序
+    return {
+        "add_toc": add_toc,
+        "math_support": math_support,
+        "ref_path": ref_path,
+        "meta_title": meta_title,
+        "meta_author": meta_author,
+        "meta_date": meta_date
+    }
+
+# ========================================
+# 標籤 1：上傳檔案模式
+# ========================================
+with tab_upload:
+    uploaded_files = st.file_uploader("上傳一個或多個 .md 檔案", type=["md"], accept_multiple_files=True)
     
-    if merge_output and len(uploaded_files) > 1:
-        st.subheader("🔀 調整合併順序")
-        # Multiselect 讓使用者可以刪除並重新加入以調整順序
-        sorted_filenames = st.multiselect(
-            "請依序選擇要合併的檔案 (由上而下)",
-            options=original_filenames,
-            default=original_filenames
-        )
+    if uploaded_files:
+        # 建立檔案名稱與物件的對照表
+        file_map = {f.name: f for f in uploaded_files}
+        original_filenames = [f.name for f in uploaded_files]
         
-        if len(sorted_filenames) != len(uploaded_files):
-            st.warning("⚠️ 請選取所有檔案以確保完整合併。")
+        # --- 排序設定 ---
+        files_to_process = uploaded_files # 預設依上傳順序
         
-        # 根據選擇的順序取出檔案物件
-        files_to_process = [file_map[name] for name in sorted_filenames]
-
-
-    if st.button("🚀 開始轉換", use_container_width=True):
-        if not files_to_process:
-            st.error("請至少選擇一個檔案進行轉換。")
-        else:
-            zip_buffer = BytesIO()
+        if merge_output and len(uploaded_files) > 1:
+            st.subheader("🔀 調整合併順序")
+            sorted_filenames = st.multiselect(
+                "請依序選擇要合併的檔案 (由上而下)",
+                options=original_filenames,
+                default=original_filenames
+            )
             
+            if len(sorted_filenames) != len(uploaded_files):
+                st.warning("⚠️ 請選取所有檔案以確保完整合併。")
+            
+            files_to_process = [file_map[name] for name in sorted_filenames]
+
+        if st.button("🚀 開始轉換", use_container_width=True, key="upload_convert"):
+            if not files_to_process:
+                st.error("請至少選擇一個檔案進行轉換。")
+            else:
+                try:
+                    with st.spinner('正在分析架構圖並轉換格式...'):
+                        with tempfile.TemporaryDirectory() as tmpdir:
+                            options = get_conversion_options(tmpdir)
+                            
+                            # 單檔且非合併模式：直接下載 .docx
+                            if len(files_to_process) == 1 and not merge_output:
+                                file = files_to_process[0]
+                                file.seek(0)
+                                raw_md = file.read().decode("utf-8")
+                                output_name = file.name.replace(".md", "")
+                                
+                                docx_bytes = convert_md_to_docx(raw_md, output_name, options, tmpdir)
+                                
+                                st.success("✨ 轉換成功！")
+                                st.download_button(
+                                    label="📥 下載 Word 文件",
+                                    data=docx_bytes,
+                                    file_name=f"{output_name}.docx",
+                                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                    use_container_width=True
+                                )
+                            
+                            # 多檔或合併模式：使用 ZIP 打包
+                            else:
+                                zip_buffer = BytesIO()
+                                
+                                # 設定 Pandoc 共用參數
+                                args = ["--standalone"]
+                                if add_toc: args.append("--toc")
+                                if math_support: args.append("--mathjax")
+                                if options["ref_path"]: args.append(f"--reference-doc={options['ref_path']}")
+                                if meta_title: args.append(f"--metadata=title:{meta_title}")
+                                if meta_author: args.append(f"--metadata=author:{meta_author}")
+                                if meta_date: args.append(f"--metadata=date:{meta_date}")
+                                if add_toc: args.append("--metadata=toc-title:目錄")
+                                
+                                with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                                    
+                                    if merge_output and len(files_to_process) > 1:
+                                        # --- 合併模式 ---
+                                        merged_md_list = []
+                                        page_break = '\n\n```{=openxml}\n<w:p><w:r><w:br w:type="page"/></w:r></w:p>\n```\n\n'
+                                        
+                                        for file in files_to_process:
+                                            file.seek(0)
+                                            raw_md = file.read().decode("utf-8")
+                                            processed = process_mermaid_to_local_img(raw_md, tmpdir)
+                                            merged_md_list.append(processed)
+                                        
+                                        merged_md = page_break.join(merged_md_list)
+                                        if add_toc:
+                                            merged_md = page_break + merged_md
+                                        
+                                        output_filename = "merged_document.docx"
+                                        temp_docx_path = os.path.join(tmpdir, output_filename)
+                                        
+                                        pypandoc.convert_text(
+                                            merged_md, 'docx', format='md', extra_args=args, outputfile=temp_docx_path
+                                        )
+                                        
+                                        with open(temp_docx_path, "rb") as f:
+                                            zip_file.writestr(output_filename, f.read())
+                                    
+                                    else:
+                                        # --- 個別轉換模式 ---
+                                        progress_bar = st.progress(0)
+                                        for i, file in enumerate(files_to_process):
+                                            file.seek(0)
+                                            raw_md = file.read().decode("utf-8")
+                                            processed_md = process_mermaid_to_local_img(raw_md, tmpdir)
+                                            
+                                            output_filename = file.name.replace(".md", ".docx")
+                                            temp_docx_path = os.path.join(tmpdir, f"output_{i}.docx")
+                                            
+                                            pypandoc.convert_text(
+                                                processed_md, 'docx', format='md', extra_args=args, outputfile=temp_docx_path
+                                            )
+                                            
+                                            with open(temp_docx_path, "rb") as f:
+                                                zip_file.writestr(output_filename, f.read())
+                                            
+                                            progress_bar.progress((i + 1) / len(files_to_process))
+                                
+                                st.success("✨ 轉換成功！")
+                                st.download_button(
+                                    label="📥 下載結果 (ZIP)",
+                                    data=zip_buffer.getvalue(),
+                                    file_name="converted_documents.zip",
+                                    mime="application/zip",
+                                    use_container_width=True
+                                )
+                
+                except Exception as e:
+                    st.error(f"轉換失敗：{str(e)}")
+                    st.info("💡 提示：若出現 404，請確認您的 Mermaid 語法是否能在一般編輯器中正確顯示。")
+    else:
+        st.info("請上傳 .md 檔案以開始使用。")
+
+# ========================================
+# 標籤 2：貼上文字模式
+# ========================================
+with tab_paste:
+    st.markdown("直接貼上 Markdown 內容，即可快速轉換為 Word 文件。")
+    
+    paste_filename = st.text_input(
+        "輸出檔名", 
+        value="document", 
+        help="輸出的 Word 檔案名稱（不需輸入副檔名）"
+    )
+    
+    paste_content = st.text_area(
+        "Markdown 內容",
+        height=400,
+        placeholder="# 標題\n\n在這裡貼上您的 Markdown 內容...\n\n## 子標題\n\n- 項目一\n- 項目二",
+        help="支援標準 Markdown 語法、Mermaid 流程圖、以及 LaTeX 數學公式"
+    )
+    
+    if st.button("🚀 開始轉換", use_container_width=True, key="paste_convert"):
+        if not paste_content.strip():
+            st.error("請輸入 Markdown 內容。")
+        elif not paste_filename.strip():
+            st.error("請輸入輸出檔名。")
+        else:
             try:
                 with st.spinner('正在分析架構圖並轉換格式...'):
                     with tempfile.TemporaryDirectory() as tmpdir:
+                        options = get_conversion_options(tmpdir)
                         
-                        # 處理範本路徑
-                        ref_path = None
-                        if default_template_path:
-                            ref_path = default_template_path
-                        elif ref_file:
-                            ref_path = os.path.join(tmpdir, "user_style.docx")
-                            with open(ref_path, "wb") as f:
-                                f.write(ref_file.getbuffer())
-
-                        # 設定 Pandoc 共用參數
-                        args = ["--standalone"]
-                        if add_toc: args.append("--toc")
-                        if math_support: args.append("--mathjax")
-                        if ref_path: args.append(f"--reference-doc={ref_path}")
+                        # 清理檔名（移除不合法字元）
+                        safe_filename = re.sub(r'[<>:"/\\|?*]', '_', paste_filename.strip())
                         
-                        # Metadata & TOC Settings
-                        if meta_title: args.append(f"--metadata=title:{meta_title}")
-                        if meta_author: args.append(f"--metadata=author:{meta_author}")
-                        if meta_date: args.append(f"--metadata=date:{meta_date}")
+                        docx_bytes = convert_md_to_docx(paste_content, safe_filename, options, tmpdir)
                         
-                        # 強制指定 TOC 標題，避免因語言設定導致空白或預設英文
-                        if add_toc: 
-                            args.append(f"--metadata=toc-title:目錄")
-
-                        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-                            
-                            if merge_output and len(files_to_process) > 1:
-                                # --- 合併模式 ---
-                                merged_md_list = []
-                                page_break = '\n\n```{=openxml}\n<w:p><w:r><w:br w:type="page"/></w:r></w:p>\n```\n\n'
-                                
-                                for file in files_to_process:
-                                    file.seek(0) # 確保從頭讀取
-                                    raw_md = file.read().decode("utf-8")
-                                    processed = process_mermaid_to_local_img(raw_md, tmpdir)
-                                    merged_md_list.append(processed)
-                                
-                                # 使用分頁符號連接各個檔案
-                                merged_md = page_break.join(merged_md_list)
-                                
-                                # 若有目錄，則在第一頁內容前也加入分頁符號 (讓目錄單獨一頁)
-                                if add_toc:
-                                    merged_md = page_break + merged_md
-                            
-                                output_filename = "merged_document.docx"
-                                temp_docx_path = os.path.join(tmpdir, output_filename)
-                                
-                                pypandoc.convert_text(
-                                    merged_md, 'docx', format='md', extra_args=args, outputfile=temp_docx_path
-                                )
-                                
-                                with open(temp_docx_path, "rb") as f:
-                                    zip_file.writestr(output_filename, f.read())
-                                    
-                            else:
-                                # --- 個別轉換模式 ---
-                                progress_bar = st.progress(0)
-                                for i, file in enumerate(files_to_process):
-                                    # 若檔案指標已在末尾 (因預覽讀取過)，需重置
-                                    file.seek(0)
-                                    raw_md = file.read().decode("utf-8")
-                                    processed_md = process_mermaid_to_local_img(raw_md, tmpdir)
-                                    
-                                    output_filename = file.name.replace(".md", ".docx")
-                                    temp_docx_path = os.path.join(tmpdir, f"output_{i}.docx")
-                                    
-                                    pypandoc.convert_text(
-                                        processed_md, 'docx', format='md', extra_args=args, outputfile=temp_docx_path
-                                    )
-                                    
-                                    with open(temp_docx_path, "rb") as f:
-                                        zip_file.writestr(output_filename, f.read())
-                                    
-                                    progress_bar.progress((i + 1) / len(files_to_process))
-
                         st.success("✨ 轉換成功！")
                         st.download_button(
-                            label="📥 下載結果 (ZIP)",
-                            data=zip_buffer.getvalue(),
-                            file_name="converted_documents.zip",
-                            mime="application/zip",
+                            label="📥 下載 Word 文件",
+                            data=docx_bytes,
+                            file_name=f"{safe_filename}.docx",
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                             use_container_width=True
                         )
-
-            
-
             
             except Exception as e:
                 st.error(f"轉換失敗：{str(e)}")
                 st.info("💡 提示：若出現 404，請確認您的 Mermaid 語法是否能在一般編輯器中正確顯示。")
-else:
-    st.info("請上傳檔案以開始使用。")
