@@ -220,26 +220,6 @@ with st.sidebar:
         merge_output = st.toggle("合併輸出", value=False, help="將所有上傳的檔案合併為單一份 Word 文件")
         st.markdown('</div>', unsafe_allow_html=True)
 
-    st.markdown("### 🎨 樣式與範本")
-    template_source = st.radio("來源", ["使用內建範本", "上傳自訂範本"], horizontal=True, label_visibility="collapsed")
-    
-    ref_file = None
-    default_template_path = None
-    
-    if template_source == "使用內建範本":
-        templates_dir = "templates"
-        if not os.path.exists(templates_dir):
-            os.makedirs(templates_dir)
-        template_files = [f for f in os.listdir(templates_dir) if f.endswith(".docx")]
-        
-        if template_files:
-            selected_template = st.selectbox("選擇範本樣式", template_files)
-            default_template_path = os.path.join(templates_dir, selected_template)
-        else:
-            st.error("找不到內建範本")
-    else:
-        ref_file = st.file_uploader("上傳 .docx 範本", type=["docx"])
-
     st.divider()
     
     with st.expander("📝 文件屬性 (Metadata)"):
@@ -247,10 +227,35 @@ with st.sidebar:
         meta_author = st.text_input("作者", placeholder="您的姓名")
         meta_date = st.text_input("日期", placeholder="YYYY-MM-DD")
 
-# --- Logic for Style Preview (Condensed) ---
+# --- Template Selection & Style Preview (Main Area) ---
+st.markdown("### 🎨 選擇與預覽範本")
+col_tmpl_1, col_tmpl_2 = st.columns([1, 2])
+
+with col_tmpl_1:
+    template_source = st.radio("範本來源", ["使用內建範本", "上傳自訂範本"], horizontal=True)
+
+ref_file = None
+default_template_path = None
+
+with col_tmpl_2:
+    if template_source == "使用內建範本":
+        templates_dir = "templates"
+        if not os.path.exists(templates_dir):
+            os.makedirs(templates_dir)
+        template_files = [f for f in os.listdir(templates_dir) if f.endswith(".docx")]
+        
+        if template_files:
+            selected_template = st.selectbox("選擇範本樣式", template_files, label_visibility="collapsed")
+            default_template_path = os.path.join(templates_dir, selected_template)
+        else:
+            st.error("找不到內建範本")
+    else:
+        ref_file = st.file_uploader("上傳 .docx 範本", type=["docx"], label_visibility="collapsed")
+
+# --- Logic for Style Preview ---
 target_style_source = default_template_path if template_source == "使用內建範本" else ref_file
 if target_style_source:
-    with st.expander(f"👁️ 查看範本樣式詳情 ({'內建' if default_template_path else '自訂'})"):
+    with st.expander(f"👁️ 查看樣式詳情 ({'內建' if default_template_path else '自訂'})"):
         df_styles = get_docx_style_info(target_style_source)
         st.dataframe(df_styles, hide_index=True, use_container_width=True)
 
