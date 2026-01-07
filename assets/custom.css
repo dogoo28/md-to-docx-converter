@@ -1,0 +1,142 @@
+/* Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* Global Reset & Typography */
+html, body, [class*="css"] {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* --- Sidebar Styling --- */
+[data-testid="stSidebar"] {
+    background-color: #f8f9fa; /* Light grey for contrast */
+    border-right: 1px solid #e9ecef;
+}
+
+/* Dark mode adjustments for sidebar */
+@media (prefers-color-scheme: dark) {
+    [data-testid="stSidebar"] {
+        background-color: #1a1c24;
+        border-right: 1px solid #2d2f36;
+    }
+}
+
+[data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 {
+    font-weight: 600;
+    letter-spacing: -0.01em;
+}
+
+/* Inputs & Select Boxes in Sidebar */
+[data-testid="stSidebar"] .stTextInput input, 
+[data-testid="stSidebar"] .stSelectbox div[data-baseweb="select"] > div {
+    background-color: #ffffff;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.02);
+}
+
+@media (prefers-color-scheme: dark) {
+    [data-testid="stSidebar"] .stTextInput input, 
+    [data-testid="stSidebar"] .stSelectbox div[data-baseweb="select"] > div {
+        background-color: #2c2e36;
+        border: 1px solid #444;
+    }
+}
+
+/* --- Main Area Styling --- */
+/* Titles */
+h1 {
+    font-weight: 700 !important;
+    letter-spacing: -0.02em !important;
+}
+
+h2, h3 {
+    font-weight: 600 !important;
+}
+
+/* Buttons */
+.stButton button {
+    border: none;
+    border-radius: 8px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    padding: 0.5rem 1rem;
+}
+
+/* Primary Action Buttons (Simulated via key matching or generalized) */
+.stButton button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+/* Tabs */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 24px;
+    border-bottom: 2px solid #f0f0f0;
+}
+
+@media (prefers-color-scheme: dark) {
+    .stTabs [data-baseweb="tab-list"] {
+        border-bottom: 2px solid #333;
+    }
+}
+
+.stTabs [data-baseweb="tab"] {
+    height: 50px;
+    white-space: nowrap;
+    background-color: transparent;
+    border: none;
+    color: #666;
+    font-weight: 500;
+    padding: 0 4px;
+}
+
+.stTabs [aria-selected="true"] {
+    color: #ff4b4b !important; /* Streamlit Red/Brand */
+    font-weight: 600;
+}
+
+/* Text Area (Monospace for Markdown) */
+.stTextArea textarea {
+    font-family: 'JetBrains Mono', monospace;
+    line-height: 1.6;
+    border-radius: 8px;
+}
+
+/* Dataframe/Table styling */
+[data-testid="stDataFrame"] {
+    border: 1px solid #eee;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+/* Custom Containers/Cards */
+div.css-card {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 12px;
+    border: 1px solid #e5e5e5;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+    margin-bottom: 1rem;
+}
+
+@media (prefers-color-scheme: dark) {
+    div.css-card {
+        background: #262730;
+        border: 1px solid #363945;
+    }
+}
+
+/* Expander styling */
+.streamlit-expanderHeader {
+    background-color: transparent;
+    border-radius: 6px;
+    font-weight: 500;
+}
+
+.streamlit-expanderContent {
+    border-left: 2px solid #eee;
+    padding-left: 1rem;
+    margin-left: 0.5rem;
+}
