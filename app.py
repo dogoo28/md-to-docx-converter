@@ -134,6 +134,21 @@ with tab_upload:
             )
             files_to_process = [file_map[n] for n in sorted_names]
 
+        # --- Live Preview ---
+        if files_to_process:
+            with st.expander("👁️ 預覽內容 (Live Preview)"):
+                preview_content = []
+                for f in files_to_process:
+                    f.seek(0)
+                    content = f.read().decode("utf-8")
+                    if len(files_to_process) > 1:
+                        preview_content.append(f"### 📄 檔案: {f.name}\n\n{content}")
+                    else:
+                        preview_content.append(content)
+                    f.seek(0) # IMPORTANT: Reset cursor for later processing
+                
+                st.markdown("\n\n---\n\n".join(preview_content))
+
         if st.button("🚀 開始轉換專案", type="primary", use_container_width=True):
             if not files_to_process:
                 st.error("請至少選擇一個檔案")
