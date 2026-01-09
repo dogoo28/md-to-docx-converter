@@ -42,7 +42,10 @@ streamlit run app.py
 
 ## 📂 專案結構
 
-*   `app.py`: 主程式邏輯。
+*   `app.py`: 主程式 UI 介面與互動邏輯。
+*   `core/`: 核心邏輯模組。
+    *   `converter.py`: Markdown 轉 Docx 與圖表處理。
+    *   `style_analyzer.py`: Word 範本樣式分析。
 *   `templates/`: 存放內建 Word 範本。
 *   `系統文件/`: 包含操作手冊與系統相關說明。
 
