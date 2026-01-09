@@ -2,3 +2,4 @@ streamlit
 pypandoc
 requests
 python-docx
+pandas
